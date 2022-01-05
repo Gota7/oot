@@ -5,7 +5,7 @@ MAKEFLAGS += --no-builtin-rules
 # If COMPARE is 1, check the output md5sum after building
 COMPARE ?= 1
 # If NON_MATCHING is 1, define the NON_MATCHING C flag when building
-NON_MATCHING ?= 0
+NON_MATCHING ?= 1
 # If ORIG_COMPILER is 1, compile with QEMU_IRIX and the original compiler
 ORIG_COMPILER ?= 0
 # If COMPILER is GCC, compile with GCC instead of IDO.
@@ -15,11 +15,64 @@ ZAPDFLAGS ?=
 # Declare CPPFLAGS used for the preprocessor.
 CPPFLAGS ?=
 
-# ORIG_COMPILER cannot be combined with a non-IDO compiler. Check for this case and error out if found.
-ifneq ($(COMPILER),ido)
-  ifeq ($(ORIG_COMPILER),1)
-    $(error ORIG_COMPILER can only be used with the IDO compiler. Please check your Makefile variables and try again)
+# Build for the N64 (turn this off for ports)
+TARGET_N64 ?= 0
+
+# Build for Emscripten/WebGL
+TARGET_WEB ?= 0
+
+# Automatic settings only for ports
+ifeq ($(TARGET_N64),0)
+
+  COMPILER := gcc
+  NON_MATCHING := 1
+  GRUCODE := f3dex2e
+  TARGET_WINDOWS := 0
+  ifeq ($(TARGET_WEB),0)
+    ifeq ($(OS),Windows_NT)
+      TARGET_WINDOWS := 1
+    else
+      # TODO: Detect Mac OS X, BSD, etc. For now, assume Linux
+      TARGET_LINUX := 1
   endif
+    endif
+
+  ifeq ($(TARGET_WINDOWS),1)
+    # On Windows, default to DirectX 11
+    ifneq ($(ENABLE_OPENGL),1)
+      ifneq ($(ENABLE_DX12),1)
+        ENABLE_DX11 ?= 1
+      endif
+    endif
+  else
+    # On others, default to OpenGL
+    ENABLE_OPENGL ?= 1
+  endif
+
+  # Sanity checks
+  ifeq ($(ENABLE_DX11),1)
+    ifneq ($(TARGET_WINDOWS),1)
+      $(error The DirectX 11 backend is only supported on Windows)
+    endif
+    ifeq ($(ENABLE_OPENGL),1)
+      $(error Cannot specify multiple graphics backends)
+    endif
+    ifeq ($(ENABLE_DX12),1)
+      $(error Cannot specify multiple graphics backends)
+    endif
+  endif
+  ifeq ($(ENABLE_DX12),1)
+    ifneq ($(TARGET_WINDOWS),1)
+      $(error The DirectX 12 backend is only supported on Windows)
+    endif
+    ifeq ($(ENABLE_OPENGL),1)
+      $(error Cannot specify multiple graphics backends)
+    endif
+    ifeq ($(ENABLE_DX11),1)
+      $(error Cannot specify multiple graphics backends)
+    endif
+  endif
+
 endif
 
 # If gcc is used, define the NON_MATCHING flag respectively so the files that
@@ -29,7 +82,6 @@ ifeq ($(COMPILER),gcc)
   ZAPDFLAGS += --gcc-compat
   NON_MATCHING := 1
 endif
-
 ifeq ($(NON_MATCHING),1)
   CFLAGS += -DNON_MATCHING
   CPPFLAGS += -DNON_MATCHING
@@ -87,8 +139,12 @@ ifeq ($(ORIG_COMPILER),1)
   CC_OLD    = $(QEMU_IRIX) -L tools/ido5.3_compiler tools/ido5.3_compiler/usr/bin/cc
 endif
 
+ifeq ($(TARGET_N64),1)
 AS         := $(MIPS_BINUTILS_PREFIX)as
 LD         := $(MIPS_BINUTILS_PREFIX)ld
+else
+LD         := ld
+endif
 OBJCOPY    := $(MIPS_BINUTILS_PREFIX)objcopy
 OBJDUMP    := $(MIPS_BINUTILS_PREFIX)objdump
 EMULATOR = mupen64plus
